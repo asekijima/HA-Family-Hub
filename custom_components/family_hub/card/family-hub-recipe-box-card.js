@@ -123,6 +123,22 @@ var __fhI18n = (window.__familyHubI18n = window.__familyHubI18n || { hass: null,
 var __fhEsc = function (s) {
   return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 };
+// Allowlist sanitizer for stored recipe descriptions (Grocy rich text).
+var __fhSafeHtml = function (html) {
+  var OK = /^(P|BR|B|STRONG|I|EM|U|S|UL|OL|LI|H[1-6]|HR|A|IMG|SPAN|DIV|BLOCKQUOTE|TABLE|THEAD|TBODY|TR|TD|TH)$/;
+  var body = new DOMParser().parseFromString(String(html || ""), "text/html").body;
+  Array.from(body.querySelectorAll("*")).forEach(function (el) {
+    if (!OK.test(el.tagName)) { el.remove(); return; }
+    Array.from(el.attributes).forEach(function (a) {
+      var keep = (a.name === "href" && el.tagName === "A") || (a.name === "src" && el.tagName === "IMG");
+      if (!keep || !/^(https?:|\/|data:image\/)/i.test(a.value.trim())) el.removeAttribute(a.name);
+    });
+  });
+  return body.innerHTML;
+};
+var __fhHtmlToText = function (html) {
+  return new DOMParser().parseFromString(String(html || ""), "text/html").body.textContent;
+};
 var __fhT = function (key, fb, vars, mode) {
   var g = window.__familyHubI18n || __fhI18n;
   if (g.fb[key] === undefined) g.fb[key] = fb;
@@ -600,7 +616,7 @@ if (isListView) {
 const media = r.image
 ? `<div class="recipe-row-media" style="background-image:url('${String(r.image).replace(/'/g, "%27")}')"></div>`
 : `<div class="recipe-row-media recipe-row-media-placeholder"><span>${initial}</span></div>`;
-const category = r.category ? `<span class="recipe-row-category">${r.category}</span>` : "";
+const category = r.category ? `<span class="recipe-row-category">${__fhEsc(r.category)}</span>` : "";
 const trailing = selectMode
 ? `<div class="recipe-row-select-badge">${isSelected ? "&#10003;" : ""}</div>`
 : `<div class="recipe-row-actions">
@@ -619,7 +635,7 @@ ${trailing}
 const media = r.image
 ? `<div class="recipe-card-media" style="background-image:url('${String(r.image).replace(/'/g, "%27")}')"></div>`
 : `<div class="recipe-card-media recipe-card-media-placeholder"><span>${initial}</span></div>`;
-const category = r.category ? `<span class="recipe-card-category">${r.category}</span>` : "";
+const category = r.category ? `<span class="recipe-card-category">${__fhEsc(r.category)}</span>` : "";
 const overlay = selectMode
 ? `<div class="recipe-card-select-badge">${isSelected ? "&#10003;" : ""}</div>`
 : `<button type="button" class="recipe-card-heart ${isLoved ? "is-loved" : ""}" data-idx="${idx}" title="${isLoved ? this._t("recipe_box.remove_from_loved", "Remove from loved") : this._t("recipe_box.love_this_dish", "Love this dish")}">${isLoved ? "&#10084;&#65039;" : "&#129293;"}</button>
@@ -990,7 +1006,7 @@ const re = /<h4>([\s\S]*?)<\/h4>|<hr\s*\/?>|<p>([\s\S]*?)<\/p>/gi;
 let m;
 while ((m = re.exec(inner || ""))) {
 if (m[1] !== undefined) {
-const text = m[1].trim();
+const text = __fhHtmlToText(m[1]).trim();
 if (text) blocks.push({ type: "header", text });
 } else if (/^<hr/i.test(m[0])) {
 blocks.push({ type: "divider" });
@@ -998,9 +1014,9 @@ blocks.push({ type: "divider" });
 const content = m[2].trim();
 const imgMatch = content.match(/^<img[^>]*\bsrc=["']([^"']+)["'][^>]*>$/i);
 if (imgMatch) {
-blocks.push({ type: "image", url: imgMatch[1] });
+blocks.push({ type: "image", url: __fhHtmlToText(imgMatch[1]) });
 } else if (content) {
-blocks.push({ type: "step", text: content });
+blocks.push({ type: "step", text: __fhHtmlToText(content).trim() });
 }
 }
 }
@@ -1009,10 +1025,10 @@ return blocks;
 _fhBlocksToPreparationHtml(blocks) {
 return (blocks || [])
 .map((b) => {
-if (b.type === "header") return `<h4>${b.text || ""}</h4>`;
+if (b.type === "header") return `<h4>${__fhEsc(b.text || "")}</h4>`;
 if (b.type === "divider") return "<hr>";
-if (b.type === "image") return `<p><img src="${(b.url || "").replace(/"/g, "&quot;")}"></p>`;
-return `<p>${b.text || ""}</p>`;
+if (b.type === "image") return `<p><img src="${__fhEsc(b.url || "")}"></p>`;
+return `<p>${__fhEsc(b.text || "")}</p>`;
 })
 .join("");
 },
@@ -1022,17 +1038,17 @@ checkedSteps = checkedSteps || new Set();
 let stepNum = 0;
 const rows = blocks.map((b, idx) => {
 if (b.type === "header") {
-return `<div class="grocy-recipe-step-header">${b.text || ""}</div>`;
+return `<div class="grocy-recipe-step-header">${__fhEsc(b.text || "")}</div>`;
 }
 if (b.type === "divider") {
 return `<hr class="grocy-recipe-step-divider" />`;
 }
 if (b.type === "image") {
-return `<div class="grocy-recipe-step-image-wrap"><img class="grocy-recipe-step-image" src="${b.url || ""}" /></div>`;
+return `<div class="grocy-recipe-step-image-wrap"><img class="grocy-recipe-step-image" src="${__fhEsc(b.url || "")}" /></div>`;
 }
 stepNum++;
 const checked = checkedSteps.has(idx) ? " checked-off" : "";
-return `<label class="grocy-recipe-instruction-row${checked}" data-idx="${idx}"><input type="checkbox" class="grocy-recipe-instruction-check"${checked ? " checked" : ""} /><span class="grocy-recipe-instruction-badge">${stepNum}</span><span class="grocy-recipe-instruction-text">${b.text || ""}</span></label>`;
+return `<label class="grocy-recipe-instruction-row${checked}" data-idx="${idx}"><input type="checkbox" class="grocy-recipe-instruction-check"${checked ? " checked" : ""} /><span class="grocy-recipe-instruction-badge">${stepNum}</span><span class="grocy-recipe-instruction-text">${__fhEsc(b.text || "")}</span></label>`;
 });
 return `<div data-fh-t="text.instructions" class="grocy-recipe-instructions-title">${__fhT("text.instructions", "Instructions", null, "h")}</div>` + rows.join("");
 },
@@ -1162,7 +1178,7 @@ return (
 `<div class="fh-step-editor-row fh-step-editor-step-row" data-idx="${idx}">` +
 dragHandle +
 `<span class="fh-step-editor-step-num">${idx + 1}</span>` +
-`<textarea data-fh-placeholder="text.step_text" class="fh-step-editor-text-input" data-idx="${idx}" placeholder="${__fhT("text.step_text", "Step text", null, "h")}">${b.text || ""}</textarea>` +
+`<textarea data-fh-placeholder="text.step_text" class="fh-step-editor-text-input" data-idx="${idx}" placeholder="${__fhT("text.step_text", "Step text", null, "h")}">${__fhEsc(b.text || "")}</textarea>` +
 controls +
 `</div>`
 );
@@ -1645,7 +1661,7 @@ const statDefs = [
 ["Total", recipe.total_time],
 ].filter(([, value]) => (value || "").trim());
 statsEl.innerHTML = statDefs
-.map(([label, value]) => `<div class="grocy-recipe-stat"><span class="grocy-recipe-stat-label">${label}</span><span class="grocy-recipe-stat-value">${value}</span></div>`)
+.map(([label, value]) => `<div class="grocy-recipe-stat"><span class="grocy-recipe-stat-label">${label}</span><span class="grocy-recipe-stat-value">${__fhEsc(value)}</span></div>`)
 .join("");
 this._grocyViewerOverlay().querySelector(".grocy-recipe-viewer-servings").textContent = recipe.servings
 ? __fhT("text.makes_x_serving_x", "Makes %0% serving%1%", {0: recipe.servings, 1: recipe.servings === 1 ? "" : "s"})
@@ -1713,7 +1729,7 @@ return;
 const baseServings = this._grocyRecipeViewerBaseServings || 1;
 const servings = this._grocyRecipeViewerServings || baseServings;
 const ratio = baseServings > 0 ? servings / baseServings : 1;
-let html = this._scaleIngredientsDescriptionHtml(raw, ratio);
+let html = this._scaleIngredientsDescriptionHtml(__fhSafeHtml(raw), ratio);
 
 // Recipes imported via this card's own "Import a recipe from a link"
 // flow (_createImportedGrocyRecipe, task #158/#223) write a predictable
@@ -1990,9 +2006,9 @@ let groupHtml = "";
 const group = ing.group || "";
 if (group !== lastGroup) {
 lastGroup = group;
-if (group) groupHtml = `<div class="grocy-recipe-ingredient-group">${group}</div>`;
+if (group) groupHtml = `<div class="grocy-recipe-ingredient-group">${__fhEsc(group)}</div>`;
 }
-const note = ing.note ? ` <span class="grocy-recipe-ingredient-note">(${ing.note})</span>` : "";
+const note = ing.note ? ` <span class="grocy-recipe-ingredient-note">(${__fhEsc(ing.note)})</span>` : "";
 const amountText = this._formatScaledIngredientAmount(ing, ratio);
 // Numbered circular badge (task #251/mockup) in place of the amount
 // leading the row - the amount itself moves down alongside the
